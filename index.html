@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Escape</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f7f4;--ink:#1d2a24;--mut:#5b6b63;--card:#fff;--ln:#d5dbd6;--room:#2f6fb0;--jn:#8a948e;--ex:#1a8f5a;--bad:#c8372d;--route:#f2a900}
+@media(prefers-color-scheme:dark){:root{--bg:#161c19;--ink:#e8eee9;--mut:#9fb0a6;--card:#202824;--ln:#36423c}}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans Bengali',system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--ln)}
+h1{margin:0;font-size:1.3rem}
+main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;padding:16px 20px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:14px}
+button,select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--ln);border-radius:8px;padding:8px 12px;cursor:pointer}
+button:hover{border-color:var(--room)}button:focus-visible,svg g:focus-visible{outline:3px solid var(--route);outline-offset:2px}
+button.on{background:var(--room);color:#fff;border-color:var(--room)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+svg{width:100%;height:auto;background:var(--card);border:1px solid var(--ln);border-radius:10px}
+.edge{stroke:var(--jn);stroke-width:3;transition:stroke .25s}
+.edge.bl{stroke:var(--bad);stroke-dasharray:7 6}
+.hit{stroke:transparent;stroke-width:18;cursor:pointer}
+.route{stroke:var(--route);stroke-width:8;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:var(--len);stroke-dashoffset:0;animation:draw .5s ease-out}
+@keyframes draw{from{stroke-dashoffset:var(--len)}}
+.cost{font-size:12px;fill:var(--ink);paint-order:stroke;stroke:var(--card);stroke-width:4px;text-anchor:middle}
+.node{cursor:pointer}.node .sh{transition:fill .25s,stroke .25s}
+.lbl{font-size:12px;text-anchor:middle;fill:var(--ink);font-weight:600}
+.start .ring{stroke:var(--route);stroke-width:4;fill:none}
+.ring{fill:none}
+#res{font-size:1.05rem}.err{color:var(--bad);font-weight:700}.ok{color:var(--ex);font-weight:700}
+.leg{display:grid;gap:4px;font-size:.88rem;color:var(--mut)}
+.leg i{display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:6px;border:2px solid}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body>
+<header><h1 id="t"></h1>
+<div class="row" style="margin:0">
+<button id="load"></button><label class="card" style="padding:6px 10px;cursor:pointer" id="fl"></label><input id="file" type="file" accept=".json,application/json" hidden>
+<button id="reset"></button><button id="lang"></button></div></header>
+<main><section><div class="row" role="group"><button id="m1"></button><button id="m2"></button></div>
+<p id="hint" style="color:var(--mut);margin:0 0 10px"></p><div id="err" class="err" role="alert"></div>
+<svg id="map" viewBox="0 0 600 300" role="img"></svg></section>
+<aside><div class="card"><h2 id="rt" style="margin-top:0;font-size:1.05rem"></h2><div id="res" aria-live="polite"></div></div>
+<div class="card" style="margin-top:12px"><div class="leg" id="leg"></div></div></aside></main>
+<script>
+const I={en:{t:"Smart Escape",load:"Load sample",file:"Import JSON",reset:"Reset",lang:"বাংলা",m1:"Select start",m2:"Toggle hazards",
+h1:"Click a room or junction to set the start.",h2:"Click a node to block it, an exit to close it, or a corridor to block it.",rt:"Route",
+none:"No route available",sb:"Starting location blocked",nostart:"Select a start location.",exit:"Exit",cost:"Total cost",path:"Path",
+bn:"Blocked room/junction",be:"Blocked corridor",ce:"Closed exit",st:"Start",ro:"Best route",
+bad:"Invalid file: ",loaded:"Loaded: ",e_json:"not valid JSON",e_top:"missing building name, nodes, edges or initial_state",e_nc:"nodes must be 2-60",
+e_ec:"edges must be 1-150",e_node:"bad node (id, label, type, numeric x/y)",e_dup:"duplicate ID",e_t:"need at least one room/junction and one exit",
+e_edge:"bad edge (id, from, to, positive integer cost)",e_ref:"edge refers to unknown node",e_loop:"self-loop",e_pair:"repeated node pair",e_init:"initial_state has bad or wrong-category IDs"},
+bn:{t:"স্মার্ট এস্কেপ",load:"নমুনা লোড",file:"JSON ইমপোর্ট",reset:"রিসেট",lang:"English",m1:"শুরু নির্বাচন",m2:"বিপদ পরিবর্তন",
+h1:"শুরুর স্থান ঠিক করতে রুম বা জংশনে ক্লিক করুন।",h2:"নোড ব্লক করতে, এক্সিট বন্ধ করতে বা করিডর ব্লক করতে ক্লিক করুন।",rt:"পথ",
+none:"কোনো পথ নেই",sb:"শুরুর স্থান ব্লক করা",nostart:"শুরুর স্থান নির্বাচন করুন।",exit:"এক্সিট",cost:"মোট খরচ",path:"পথ",
+bn:"ব্লক করা রুম/জংশন",be:"ব্লক করা করিডর",ce:"বন্ধ এক্সিট",st:"শুরু",ro:"সেরা পথ",
+bad:"ভুল ফাইল: ",loaded:"লোড হয়েছে: ",e_json:"বৈধ JSON নয়",e_top:"building, nodes, edges বা initial_state নেই",e_nc:"নোড ২-৬০টি হতে হবে",
+e_ec:"এজ ১-১৫০টি হতে হবে",e_node:"ভুল নোড (id, label, type, সংখ্যাসূচক x/y)",e_dup:"আইডি পুনরাবৃত্ত",e_t:"অন্তত একটি রুম/জংশন ও একটি এক্সিট লাগবে",
+e_edge:"ভুল এজ (id, from, to, ধনাত্মক পূর্ণসংখ্যা cost)",e_ref:"এজ অজানা নোড উল্লেখ করেছে",e_loop:"নিজের সাথে সংযোগ",e_pair:"একই নোড-জোড়া পুনরাবৃত্ত",e_init:"initial_state-এ ভুল বা ভুল ধরনের আইডি"}};
+let L='en',D=null,S={n:new Set(),e:new Set(),x:new Set()},start=null,mode='start',errKey=null,errTxt='';
+const $=id=>document.getElementById(id),T=k=>I[L][k];
+const NS='http://www.w3.org/2000/svg';
+function validate(d){
+ const f=m=>{throw m};
+ if(!d||typeof d!=='object')f('e_top');
+ if(typeof d.building!=='string'||!d.building.trim()||!Array.isArray(d.nodes)||!Array.isArray(d.edges)||!d.initial_state||typeof d.initial_state!=='object')f('e_top');
+ if(d.nodes.length<2||d.nodes.length>60)f('e_nc');
+ if(d.edges.length<1||d.edges.length>150)f('e_ec');
+ const nm=new Map();
+ for(const n of d.nodes){
+  if(!n||typeof n.id!=='string'||!n.id||typeof n.label!=='string'||!n.label.trim()||!['room','junction','exit'].includes(n.type)||typeof n.x!=='number'||typeof n.y!=='number'||!isFinite(n.x)||!isFinite(n.y))f('e_node');
+  if(nm.has(n.id))f('e_dup');nm.set(n.id,n)}
+ if(![...nm.values()].some(n=>n.type!=='exit')||![...nm.values()].some(n=>n.type==='exit'))f('e_t');
+ const ei=new Set(),pr=new Set();
+ for(const e of d.edges){
+  if(!e||typeof e.id!=='string'||!e.id||typeof e.from!=='string'||typeof e.to!=='string'||!Number.isInteger(e.cost)||e.cost<=0)f('e_edge');
+  if(ei.has(e.id))f('e_dup');ei.add(e.id);
+  if(!nm.has(e.from)||!nm.has(e.to))f('e_ref');
+  if(e.from===e.to)f('e_loop');
+  const k=[e.from,e.to].sort().join('\u0000');if(pr.has(k))f('e_pair');pr.add(k)}
+ const s=d.initial_state,A=['blocked_nodes','blocked_edges','closed_exits'];
+ for(const a of A)if(!Array.isArray(s[a]))f('e_init');
+ for(const id of s.blocked_nodes){const n=nm.get(id);if(!n||n.type==='exit')f('e_init')}
+ for(const id of s.closed_exits){const n=nm.get(id);if(!n||n.type!=='exit')f('e_init')}
+ for(const id of s.blocked_edges)if(!ei.has(id))f('e_init');
+}
+function setData(d){
+ D=JSON.parse(JSON.stringify(d));D.nm=new Map(D.nodes.map(n=>[n.id,n]));
+ start=null;resetState();
+}
+function resetState(){const s=D.initial_state;S={n:new Set(s.blocked_nodes),e:new Set(s.blocked_edges),x:new Set(s.closed_exits)};render()}
+function solve(){
+ const adj=new Map(D.nodes.map(n=>[n.id,[]]));
+ for(const e of D.edges){if(S.e.has(e.id)||S.n.has(e.from)||S.n.has(e.to)||S.x.has(e.from)||S.x.has(e.to))continue;
+  adj.get(e.from).push([e.to,e.cost]);adj.get(e.to).push([e.from,e.cost])}
+ const dij=src=>{const d=new Map([[src,0]]),done=new Set();
+  for(;;){let u=null;for(const [k,v] of d)if(!done.has(k)&&(u===null||v<d.get(u)))u=k;if(u===null)break;done.add(u);
+   for(const [w,c] of adj.get(u)){const nd=d.get(u)+c;if(!d.has(w)||nd<d.get(w))d.set(w,nd)}}return d};
+ const ds=dij(start);let best=null;
+ for(const n of D.nodes){if(n.type!=='exit'||S.x.has(n.id)||!ds.has(n.id))continue;
+  const c=ds.get(n.id);if(!best||c<best.c||(c===best.c&&n.id<best.id))best={id:n.id,c}}
+ if(!best)return null;
+ const de=dij(best.id),path=[start];let cur=start;
+ while(cur!==best.id){let nx=null;
+  for(const [w,c] of adj.get(cur))if(de.has(w)&&de.get(cur)===c+de.get(w)&&(nx===null||w<nx))nx=w;
+  path.push(nx);cur=nx}
+ return{exit:best.id,cost:best.c,path}}
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p&&p.appendChild(e);return e}
+function render(){
+ document.documentElement.lang=L==='bn'?'bn':'en';
+ for(const [id,k] of [['t','t'],['load','load'],['fl','file'],['reset','reset'],['lang','lang'],['m1','m1'],['m2','m2'],['rt','rt']])$(id).textContent=T(k);
+ document.title=T('t');$('m1').classList.toggle('on',mode==='start');$('m2').classList.toggle('on',mode==='hazard');
+ $('hint').textContent=mode==='start'?T('h1'):T('h2');
+ $('err').textContent=errKey?T('bad')+T(errKey)+(errTxt?' ('+errTxt+')':''):'';
+ $('leg').innerHTML=`<div><i style="border-color:var(--room);border-radius:50%"></i>${L==='bn'?'রুম':'Room'}</div><div><i style="border-color:var(--jn);transform:rotate(45deg) scale(.8)"></i>${L==='bn'?'জংশন':'Junction'}</div><div><i style="border-color:var(--ex)"></i>${T('exit')}</div><div><i style="border-color:var(--route);background:var(--route)"></i>${T('ro')}</div><div><i style="border-color:var(--bad);background:var(--bad)"></i>${T('bn')}</div><div><i style="border-style:dashed;border-color:var(--bad)"></i>${T('be')}</div><div><i style="border-color:var(--bad);text-decoration:line-through"></i>${T('ce')}</div>`;
+ const svg=$('map');svg.innerHTML='';if(!D)return;
+ const xs=D.nodes.map(n=>n.x),ys=D.nodes.map(n=>n.y),P=50,W=600,H=300;
+ const x0=Math.min(...xs),y0=Math.min(...ys),sx=Math.max(...xs)-x0||1,sy=Math.max(...ys)-y0||1;
+ const sc=Math.min((W-2*P)/sx,(H-2*P)/sy),ox=(W-sx*sc)/2,oy=(H-sy*sc)/2;
+ const pos=n=>[ox+(n.x-x0)*sc,oy+(n.y-y0)*sc];
+ const res=start&&!S.n.has(start)?solve():null;
+ for(const e of D.edges){const a=pos(D.nm.get(e.from)),b=pos(D.nm.get(e.to));const bl=S.e.has(e.id);
+  el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'edge'+(bl?' bl':'')},svg)}
+ if(res&&res.path.length>1){const pts=res.path.map(i=>pos(D.nm.get(i)).join(',')).join(' ');
+  let len=0,q=res.path.map(i=>pos(D.nm.get(i)));for(let i=1;i<q.length;i++)len+=Math.hypot(q[i][0]-q[i-1][0],q[i][1]-q[i-1][1]);
+  const r=el('polyline',{points:pts,class:'route'},svg);r.style.setProperty('--len',Math.ceil(len)+2)}
+ for(const e of D.edges){const a=pos(D.nm.get(e.from)),b=pos(D.nm.get(e.to));
+  const h=el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'hit'},svg);
+  h.addEventListener('click',()=>{if(mode!=='hazard')return;S.e.has(e.id)?S.e.delete(e.id):S.e.add(e.id);render()});
+  const t=el('text',{x:(a[0]+b[0])/2,y:(a[1]+b[1])/2+4,class:'cost'},svg);t.textContent=e.cost}
+ for(const n of D.nodes){const [x,y]=pos(n);const bn=S.n.has(n.id),cx=S.x.has(n.id);
+  const g=el('g',{class:'node'+(n.id===start?' start':''),tabindex:0,role:'button','aria-label':n.label+' '+n.id},svg);
+  const col=bn||cx?'var(--bad)':n.type==='room'?'var(--room)':n.type==='exit'?'var(--ex)':'var(--jn)';
+  const fill=bn?'var(--bad)':'var(--card)';
+  let s;
+  if(n.type==='room')s=el('circle',{cx:x,cy:y,r:17},g);
+  else if(n.type==='exit')s=el('rect',{x:x-18,y:y-14,width:36,height:28,rx:4},g);
+  else s=el('rect',{x:x-13,y:y-13,width:26,height:26,transform:`rotate(45 ${x} ${y})`},g);
+  s.setAttribute('class','sh');s.setAttribute('stroke',col);s.setAttribute('stroke-width',3);s.setAttribute('fill',fill);
+  if(bn||cx){const m=bn?'M-8 -8L8 8M8 -8L-8 8':'M-12 -9L12 9';el('path',{d:m,stroke:bn?'#fff':'var(--bad)','stroke-width':3,transform:`translate(${x} ${y})`},g)}
+  if(n.id===start)el('circle',{cx:x,cy:y,r:24,class:'ring'},g);
+  const l=el('text',{x,y:y+36,class:'lbl'},g);l.textContent=n.label;
+  const act=()=>{
+   if(mode==='start'){if(n.type!=='exit'){start=n.id;render()}}
+   else{const s2=n.type==='exit'?S.x:S.n;s2.has(n.id)?s2.delete(n.id):s2.add(n.id);render()}};
+  g.addEventListener('click',act);g.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();act()}})}
+ const R=$('res');
+ if(!start)R.textContent=T('nostart');
+ else if(S.n.has(start))R.innerHTML=`<span class="err">${T('sb')}</span>`;
+ else if(!res)R.innerHTML=`<span class="err">${T('none')}</span>`;
+ else{const lb=i=>D.nm.get(i).label;
+  R.innerHTML=`<div class="ok">${T('exit')}: ${esc(lb(res.exit))} (${esc(res.exit)})</div><div>${T('cost')}: <b>${res.cost}</b></div><div>${T('path')}: ${res.path.map(esc).join(' → ')}</div>`}
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function tryLoad(txt){
+ try{let d;try{d=JSON.parse(txt)}catch{throw 'e_json'}validate(d);errKey=null;setData(d)}
+ catch(k){errKey=typeof k==='string'&&I.en[k]?k:'e_top';render()}}
+$('file').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>tryLoad(r.result);r.readAsText(f);e.target.value=''});
+$('fl').addEventListener('click',()=>$('file').click());
+$('load').addEventListener('click',()=>fetch('building.json').then(r=>r.text()).then(tryLoad).catch(()=>{errKey='e_json';render()}));
+$('reset').addEventListener('click',()=>{if(D){errKey=null;resetState()}});
+$('lang').addEventListener('click',()=>{L=L==='en'?'bn':'en';render()});
+$('m1').addEventListener('click',()=>{mode='start';render()});
+$('m2').addEventListener('click',()=>{mode='hazard';render()});
+render();$('load').click();
+</script></body></html>
